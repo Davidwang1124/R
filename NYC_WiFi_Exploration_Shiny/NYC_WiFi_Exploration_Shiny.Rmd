@@ -1,0 +1,359 @@
+---
+title: "NYC_WiFi_Exploration_Shiny"
+author: "ShikuiWang"
+date: "12/4/2018"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# The dataset is downloaded from https://data.cityofnewyork.us/City-Government/NYC-Wi-Fi-Hotspot-Locations/66qr-66q7. 
+# New York City is one of most popular place for tourists, so this app may help those tourists find where Wi-Fi is, 
+# and help local residents to explore some features of Wi-Fi hotspots in New York to have a better insights of their city.
+library(leaflet)
+library(shiny)
+library(shinythemes)
+library(ggplot2)
+library(wordcloud)
+library(tm)
+library(dplyr)
+ui <- fluidPage(
+  theme = shinytheme("sandstone"),
+  
+  
+  titlePanel("NYC WiFi Hotspot Locations Map"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      fileInput("file", "Browse a CSV file",
+                accept = c(
+                  "text/csv",
+                  "text/comma-separated-values,text/plain",
+                  ".csv")),
+      helpText("Please select a borough that you are interested in"),
+      checkboxGroupInput("borough",
+                         "Borough:",
+                         choices = list("Manhattan"= 'Manhattan',"Brooklyn"= "Brooklyn","Queens"= "Queens",
+                                        "Bronx"= "Bronx","Staten Island"= "Staten Island"),
+                         selected = list("Manhattan"= 'Manhattan',"Brooklyn"= "Brooklyn","Queens"= "Queens",
+                                         "Bronx"= "Bronx","Staten Island"= "Staten Island")
+      ),
+      hr(),
+      helpText("Please select Wi-Fi type that you are interested in"),
+      checkboxGroupInput("type",
+                         "Wi-Fi Type",
+                         choices = list('Free', 'Limited Free', 'Partner Site'),
+                         selected = list('Free', 'Limited Free', 'Partner Site')
+      ),
+      sliderInput(inputId = "row",
+                  label = "Row",
+                  min = 1, max = 100,
+                  value = c(1,100)),
+      sliderInput(inputId = "column",
+                  label = "Column",
+                  min = 1, max = 100,
+                  value = c(1,100))
+      
+      
+    ),
+    mainPanel(
+      tabsetPanel(
+        type="tabs",
+        tabPanel(title = "Description", textOutput("text")),
+        tabPanel(title = 'Map', leafletOutput("map", height = 620)),
+        
+        tabPanel(title = "Descriptive Statistics and Plots",
+                 tabsetPanel(
+                   tabPanel("Type", plotOutput("plot1")),
+                   tabPanel("Borough", plotOutput("plot2")),
+                   tabPanel("Provider", plotOutput("plot3")),
+                   tabPanel("Type of Location", plotOutput("plot4")),
+                   tabPanel("Network Name(SSID)", plotOutput("plot5"))
+                 )
+        ),
+        tabPanel(title = "Word Cloud",
+                 tabsetPanel(
+                   tabPanel(title = "Address of WiFi", plotOutput("plot6")),
+                   tabPanel(title = "Neighborhood of WiFi", plotOutput("plot7")),
+                   tabPanel(title = "Location Name of WiFi", plotOutput("plot8"))
+                 )
+        ),
+        tabPanel(title = "Data Explorer", tableOutput("mycsv"))
+      )
+    )
+  )
+)
+
+
+server <- function(input, output,session){
+  output$text <- renderText({
+    
+    "This dataset is downloaded from https://data.cityofnewyork.us and is about the locations of 
+WiFi Hotspot in New York City. New York is one of most famous city in the world, attracting 
+millions of tourists every year. So this shiny app can help both tourists and local people to
+locate where free WiFi is located to make their life more convenient. This app has several
+functions       =============================================================================        (1) Map: Using the Map tab, you can easily explore the distribution of WiFi hotspot in 
+    New York City in a map and select different boroughs and WiFi type in the left sidebar to filter your result
+    |(2) Descriptive Statistics and Plots: Using this tab, you can explore some statistical features
+    of WiFi Hotspot in New York City (3) Word Cloud: Using Word Cloud, you can conduct work cloud 
+    analysis of WiFi address, name of locations, and neighborhood, allowing you to intuitively see what is 
+    the place that most WiFi hotspots are located in. (4) Data Explorer: This allows you to explore
+    the original dataset, and you can limit the rows and columns of dataset by adjusting the sliders 
+    on the bottom of the sidebar"
+    
+  })
+  output$map <- renderLeaflet({
+    
+    # Connect to the sidebar of file input
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return(NULL)
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    map_df <- mydata
+    # Filter the data for different time slots and different districts
+    target1 <- c(input$borough)
+    target2 <- c(input$type)
+    map_df <- filter(mydata, BoroName %in% target1 & Type %in% target2)
+    
+    # Create colors with a categorical color function
+
+    
+    # Create the leaflet function for data
+    leaflet(map_df) %>%
+      
+      
+      addProviderTiles(providers$Esri.NatGeoWorldMap) %>%
+      # Set the default view
+      
+      
+      # Provide tiles
+
+      addTiles() %>%
+      
+      addCircleMarkers(
+        radius = 2,
+        lng= map_df$Longitude,
+        lat= map_df$Latitude,
+        stroke= FALSE
+      ) 
+      
+      # Add legends for different types of crime
+    
+
+})
+
+
+  output$plot1 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    # Filter the data for different time slots and different districts
+    target1 <- c(input$borough)
+    target2 <- c(input$type)
+    borough_df <- filter(mydata, BoroName %in% target1 & Type %in% target2)
+    ggplot(borough_df, aes(x = borough_df$Type)) + geom_bar(fill = 'gray') + xlab('Type') + ylab("Number") + ggtitle("Number of Rows by Type")
+  })
+  output$plot2 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    # Filter the data for different time slots and different districts
+    target1 <- c(input$borough)
+    target2 <- c(input$type)
+    borough_df <- filter(mydata, BoroName %in% target1 & Type %in% target2)
+    ggplot(borough_df, aes(x = borough_df$BoroName)) + geom_bar(fill = 'orange') + xlab('Name of Borough') + ylab("Number") + ggtitle("Number of Rows by Borough")
+  })
+  output$plot3 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    # Filter the data for different time slots and different districts
+    target1 <- c(input$borough)
+    target2 <- c(input$type)
+    borough_df <- filter(mydata, BoroName %in% target1 & Type %in% target2)
+    ggplot(borough_df, aes(x = borough_df$Provider)) + geom_bar(fill = 'black') + xlab('Provider') + ylab("Number") + ggtitle("Number of Rows by Provider") + coord_flip()
+  })
+  output$plot4 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    # Filter the data for different time slots and different districts
+    target1 <- c(input$borough)
+    target2 <- c(input$type)
+    borough_df <- filter(mydata, BoroName %in% target1 & Type %in% target2)
+    ggplot(borough_df, aes(x = borough_df$Location_T)) + geom_bar(fill = 'pink') + xlab('Type of Location') + ylab("Number") + ggtitle("Number of Rows by Type of Location") + coord_flip()
+  })
+  output$plot5 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    # Filter the data for different time slots and different districts
+    target1 <- c(input$borough)
+    target2 <- c(input$type)
+    borough_df <- filter(mydata, BoroName %in% target1 & Type %in% target2)
+    ggplot(borough_df, aes(x = borough_df$SSID)) + geom_bar(fill = 'purple') + xlab('Network Name(SSID)') + ylab("Number") + ggtitle("Number of Rows by SSID") + coord_flip()
+  })
+  output$plot6 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    myword <- as.character(mydata$Location)
+    txt1 <- ''
+    for (j in myword){
+      txt1 = paste(txt1,j)
+    }
+    
+    
+    docs <- Corpus(VectorSource(txt1))
+    
+    docs <- tm_map(docs, content_transformer(tolower))
+    docs <- tm_map(docs, removeNumbers)
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    docs <- tm_map(docs, removePunctuation)
+    docs <- tm_map(docs, stripWhitespace)
+    dtm <- TermDocumentMatrix(docs)
+    m <- as.matrix(dtm)
+    v <- sort(rowSums(m),decreasing=TRUE)
+    d <- data.frame(word = names(v),freq=v)
+    
+    wordcloud(words = d$word, freq = d$freq, min.freq = 6,
+              max.words=200, random.order=FALSE, rot.per=0.35, 
+              colors=brewer.pal(8, "Dark2"))
+    
+  })
+  output$plot7 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    myword <- as.character(mydata$NTAName)
+    txt1 <- ''
+    for (j in myword){
+      txt1 = paste(txt1,j)
+    }
+    
+    
+    docs <- Corpus(VectorSource(txt1))
+    
+    docs <- tm_map(docs, content_transformer(tolower))
+    docs <- tm_map(docs, removeNumbers)
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    docs <- tm_map(docs, removePunctuation)
+    docs <- tm_map(docs, stripWhitespace)
+    dtm <- TermDocumentMatrix(docs)
+    m <- as.matrix(dtm)
+    v <- sort(rowSums(m),decreasing=TRUE)
+    d <- data.frame(word = names(v),freq=v)
+    
+    wordcloud(words = d$word, freq = d$freq, min.freq = 6,
+              max.words=200, random.order=FALSE, rot.per=0.35, 
+              colors=brewer.pal(8, "Dark2"))
+    
+  })
+  output$plot8 <- renderPlot({
+    inFile <- input$file
+    
+    if(is.null(inFile))
+      return("Please Upload A File For Analysis")
+    
+    # Read input file
+    mydata <- read.csv(inFile$datapath)
+    attach(mydata)
+    
+    myword <- as.character(mydata$Name)
+    txt1 <- ''
+    for (j in myword){
+      txt1 = paste(txt1,j)
+    }
+    
+    
+    docs <- Corpus(VectorSource(txt1))
+    
+    docs <- tm_map(docs, content_transformer(tolower))
+    docs <- tm_map(docs, removeNumbers)
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    docs <- tm_map(docs, removePunctuation)
+    docs <- tm_map(docs, stripWhitespace)
+    dtm <- TermDocumentMatrix(docs)
+    m <- as.matrix(dtm)
+    v <- sort(rowSums(m),decreasing=TRUE)
+    d <- data.frame(word = names(v),freq=v)
+    
+    wordcloud(words = d$word, freq = d$freq, min.freq = 6,
+              max.words=200, random.order=FALSE, rot.per=0.35, 
+              colors=brewer.pal(8, "Dark2"))
+    
+  })
+  output$mycsv <- renderTable({
+    inFile <- input$file
+    if (is.null(inFile))
+      return(NULL)
+    csvread <- read.csv(inFile$datapath)
+    observe({
+      updateSliderInput(session, "row", max = nrow(csvread))
+      updateSliderInput(session, "column", max = ncol(csvread))
+    })
+    csvread_filter <- csvread[input$row[1]:input$row[2],input$column[1]:input$column[2]]
+    return(csvread_filter)
+  })
+}
+
+shinyApp(ui,server)
+
+
+
+
+
+
+
+```
+
