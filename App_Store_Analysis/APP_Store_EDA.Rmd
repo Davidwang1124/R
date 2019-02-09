@@ -1,0 +1,204 @@
+---
+title: "EDA_of_App_Store"
+author: "ShikuiWang"
+date: "2/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Data is downloaded from Kaggle(https://www.kaggle.com/ramamet4/app-store-apple-data-set-10k-apps)
+Explore the data to get some useful information
+
+The ever-changing mobile landscape is a challenging space to navigate. . The percentage of mobile over desktop is only increasing. Android holds about 53.2% of the smartphone market, while iOS is 43%. To get more people to download your app, you need to make sure they can easily find your app. Mobile app analytics is a great way to understand the existing strategy to drive growth and retention of future user.
+
+With million of apps around nowadays, the following data set has become very key to getting top trending apps in iOS app store. This data set contains more than 7000 Apple iOS mobile application details. The data was extracted from the iTunes Search API at the Apple Inc website. R and linux web scraping tools were used for this study.
+
+Data collection date (from API); July 2017
+
+
+#### appleStore.csv
+"id" : App ID
+
+"track_name": App Name
+
+"size_bytes": Size (in Bytes)
+
+"currency": Currency Type
+
+"price": Price amount
+
+"rating_count_tot": User Rating counts (for all version)
+
+"rating_count_ver": User Rating counts (for current version)
+
+"user_rating" : Average User Rating value (for all version)
+
+"user_rating_ver": Average User Rating value (for current version)
+
+"ver" : Latest version code
+
+"cont_rating": Content Rating
+
+"prime_genre": Primary Genre
+
+"sup_devices.num": Number of supporting devices
+
+"ipadSc_urls.num": Number of screenshots showed for display
+
+"lang.num": Number of supported languages
+
+"vpp_lic": Vpp Device Based Licensing Enabled
+
+#### appleStore_description.csv
+id : App ID
+track_name: Application name
+size_bytes: Memory size (in Bytes)
+app_desc: Application description
+
+
+## 1. Load the data
+```{r}
+library(dplyr)
+library(ggplot2)
+library(treemap)
+library(scales)
+library(stringr)
+
+app <- read.csv('/Users/wangshikui/Desktop/SPRING/Python Learning Notebook/R/app-store-apple-data-set-10k-apps/AppleStore.csv')
+
+description <- read.csv('/Users/wangshikui/Desktop/SPRING/Python Learning Notebook/R/app-store-apple-data-set-10k-apps/appleStore_description.csv')
+
+
+# Join two datasets
+full <- app %>% left_join(description, by = 'id')
+head(full,1)
+dim(full)
+```
+
+## 2. Data Cleaning
+```{r}
+# 1. Is there missing value?
+apply(full, 2,is.null)
+```
+```{r}
+# 2. is ther dupliate value?
+sum(duplicated(full))
+```
+```{r}
+# 3. After joining, there are two columns representing same things, delete either one of those two
+full <- full %>% select(-c(size_bytes.x,track_name.x))
+full <- full %>% rename(size = size_bytes.y, name = track_name.y)
+```
+
+## 3. Data Manipulation
+```{r}
+# 1. Convert byte to Megabyte
+full <- full %>% mutate(size = size/1048576)
+full$size <- round(full$size, 2)
+
+# 2. Create a new column 'Paid' which indicates whether an app is free or not for convinience of further exploration
+full <- full %>% mutate(paid = if_else(price != 0, 'Yes', 'No'))
+str(full)
+
+# 3. Remove unnecessary columns
+full <- full %>% select(-X)
+
+```
+
+## 4. Exploratory Data Analysis
+```{r}
+# 1. Preliminary Analysis
+# 1.1 Frequency of genres
+full %>% group_by(prime_genre) %>% count() %>% treemap(index = 'prime_genre',vSize = 'n', type = 'index')
+# Games accouts for significant proportion of all apps, so do Entertainment, Education and Photo & Video
+```
+
+```{r}
+## 1.2 What apps are most expensive
+full %>% arrange(desc(price)) %>% select(name,prime_genre, price) %>% top_n(5)
+```
+
+```{r}
+# 1.3 What are most popular apps in general?
+full %>% select(name,rating_count_tot) %>% arrange(desc(rating_count_tot)) %>% 
+  top_n(10) %>% ggplot(aes(x = name, y = rating_count_tot)) + geom_bar(stat = 'identity') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  scale_y_continuous(label = comma)
+```
+
+```{r}
+# 1.4 What are most popular games?
+full %>% filter(prime_genre == 'Games') %>% select(name,rating_count_tot) %>% arrange(desc(rating_count_tot)) %>% 
+  top_n(10) %>% ggplot(aes(x = name, y = rating_count_tot)) + geom_bar(stat = 'identity') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  scale_y_continuous(label = comma)
+```
+```{r}
+## 1.5 What are most popular Photo & Video apps? (Because I love taking photos:))
+full %>% filter(prime_genre == 'Photo & Video') %>% select(name,rating_count_tot) %>% arrange(desc(rating_count_tot)) %>% 
+  top_n(10) %>% ggplot(aes(x = name, y = rating_count_tot)) + geom_bar(stat = 'identity') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  scale_y_continuous(label = comma)
+```
+
+## 1.6 Does size has relationship with price?
+```{r}
+full %>% ggplot(aes(x = size, y = price, color = prime_genre)) + geom_point()
+
+
+```
+Seems like there is no relationship between price and size, and game apps are all generally less than 50 dollars
+
+```{r}
+# 2. More Analysis
+# 2.1 What is distribution of price by genres
+full %>%  mutate(Free = if_else(price != 0, 'Non-Free', 'Free')) %>% select(prime_genre, price, Free) %>% 
+  ggplot(aes(x = prime_genre, y = price)) + geom_boxplot() + ylim(c(0,25)) + coord_flip()
+```
+
+
+```{r}
+# 2.2 Overall, If current versions of apps are better versions? (based on difference between average rating and current version rating)
+full %>% select(user_rating, user_rating_ver) %>% mutate(diff = user_rating_ver-user_rating) %>% ggplot(aes(x = diff))+ xlab(label = 'Difference') +
+  geom_histogram(colour = 'black', bins = 10)
+```
+
+```{r}
+# 2.3 Among paid Game apps, is there any relationship between rating and price
+full %>% filter(price != 0 & prime_genre == 'Games') %>% ggplot() +geom_point(aes(y = price, x = user_rating))
+# As rating increases, we can see, generally, price goes up too.
+```
+
+```{r}
+# 2.4 Correlation Matrix
+library(Hmisc)
+library(corrplot)
+corr_data <- full %>% select(c(price, rating_count_tot,rating_count_ver,user_rating,user_rating_ver,sup_devices.num,
+                               lang.num,size))
+corr_mat <- rcorr(as.matrix(corr_data))
+corrplot(corr_mat$r)
+```
+
+```{r}
+# 2.5 Free/Non-Free apps percentage in each categories
+full %>% select(prime_genre, paid) %>% 
+    group_by(.dots = c('prime_genre','paid')) %>% summarise (n = n()) %>% mutate(freq = n / sum(n)) %>% 
+  ggplot(aes(x="", y=freq, fill=paid))+ geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) +
+  facet_wrap(~prime_genre) + scale_fill_grey() + theme(axis.text.x=element_blank())
+# We can see shopping apps are almost all free, Business, Education, Health & Fitness, Music, Medical, Navigator, Photo&Video, Productivity, Reference, Utilities,and Weather apps have more than 50 percent paid.
+
+```
+
+## Conslusion
+1. Facebook is most popular app
+2. Clash of Clan and Temple Run are most popular games, maybe I should download and try
+3. Instagram is most popular app in Photo&Video category
+4. There is no relationship between size and price
+5. Games app are generally less than 50 dollars, most expensive apps are all in education category
+6. Education, Business, Medical, Reference, and Productivity are relatively more expensive
+7. Among games, generally, as rating inscrases, the price also goes up
+8. Most updates make no changes in rating
+9. Catelogs, Finance, Shopping and Social Network apps are most free, especially shopping, while Business, Education, Productivity, Reference and Medical are most non-free. Combined with 6, I conclude that among apps that are most non-free, apps are more expensive as well.
