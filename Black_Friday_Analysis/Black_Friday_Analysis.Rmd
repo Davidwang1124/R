@@ -1,0 +1,170 @@
+---
+title: "Black_Friday_Analysis"
+author: "ShikuiWang"
+date: "12/1/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### The Black Friday of 2018 just passed, all stores were almost full of people and I also buy many items. So, I want to use what I learn from courses of Business Analytics program to explore something about Black Friday to not only have some insights of this Black Friday but also gain some practical experience of using R. The dataset here is a sample of the transactions made in a retail store. The store wants to know better the customer purchase behaviour against different products. However, all variables are labeled simply by number, without a specific defination. Hopefully we can still find some patterns behind the dataset.
+
+#### The data is from https://www.kaggle.com/mehdidag/black-friday
+
+## 1. Prepare the data
+### 1.1 Load the data
+```{r}
+df <- read.csv("/Volumes/Shikui Wang/Dataset/BlackFriday.csv", stringsAsFactors = FALSE)
+```
+
+```{r}
+# Because the dataset is very large, we only explore some part of it.
+# Let's explore the part which doesn't contain missing values
+df_complete <- df[complete.cases(df),]
+sum(apply(df_complete, 2, is.na))
+# No missing values now
+```
+
+### 1.2 Inspect data structure
+```{r}
+dim(df_complete)
+str(df_complete)
+# The dataset contains 164278 rows and 12 columns, and all columns are categorical except User_ID, Product_ID, and Purchase
+
+```
+
+### 1.3 Clean and format data
+```{r}
+# We have to convert categorical variable to factor
+
+df_complete$Gender <- as.factor(df_complete$Gender)
+df_complete$Age <- as.factor(df_complete$Age)
+df_complete$Occupation <- as.factor(df_complete$Occupation)
+df_complete$City_Category <- as.factor(df_complete$City_Category)
+df_complete$Stay_In_Current_City_Years <- as.factor(df_complete$Stay_In_Current_City_Years)
+df_complete$Marital_Status <- as.factor(df_complete$Marital_Status)
+df_complete$Product_Category_1 <- as.factor(df_complete$Product_Category_1)
+df_complete$Product_Category_2 <- as.factor(df_complete$Product_Category_2)
+df_complete$Product_Category_3 <- as.factor(df_complete$Product_Category_3)
+# Now all categorical data has been changed to factor
+str(df_complete)
+```
+
+```{r}
+# All done, now we can explore the data 
+# Although those categorical data is labeled by number, hopefully we can explore it to reveal some secrets:)
+# I am mainly interested in age, gender, occupation, city category and year of staying in city
+library(dplyr)
+library(ggplot2)
+library(scales)
+```
+
+## 2. Preliminary Exploratory
+#### We first conduct preliminary data analysis to have a glimpse of data, and get some insights about this retail store
+### 2.1 Gender
+```{r}
+ggplot(df_complete, aes(Gender)) + geom_bar() + scale_y_continuous(expand = c(0, 0)) +
+  geom_text(aes(label=..count..),stat='count',position=position_dodge(0.9), vjust=-0.2) + ylim(0,140000) + scale_y_continuous(labels = comma)
+# Male is much more than female, implying this store may be selling things men are interested in
+```
+### 2.2 Age
+```{r}
+ggplot(df_complete, aes(Age)) + geom_bar() + scale_y_continuous(expand = c(0, 0)) +
+  geom_text(aes(label=..count..),stat='count',position=position_dodge(0.9), vjust=-0.2) + ylim(0,70000)
+# We can see most customer are of age 18-45, which means this is neither a toy store nor a pharmacy, something like that 
+```
+### 2.3 Occupation
+```{r}
+ggplot(df_complete, aes(Occupation)) + geom_bar() + scale_y_continuous(expand = c(0, 0))
+```
+### 2.4 City Category
+```{r}
+ggplot(df_complete, aes(City_Category)) + geom_bar() + scale_y_continuous(expand = c(0, 0)) +
+  geom_text(aes(label=..count..),stat='count',position=position_dodge(0.9), vjust=-0.2) + ylim(0,80000)
+# City category B has most sales and City category A has least, possibly city category B means big cities, and B small cities
+```
+### 2.5 Stay in City Year
+```{r}
+ggplot(df_complete, aes(Stay_In_Current_City_Years)) + geom_bar() + scale_y_continuous(expand = c(0, 0)) + 
+  geom_text(aes(label=..count..),stat='count',position=position_dodge(0.9), vjust=-0.2) + ylim(0, 60000)
+# We can know that most customers who come are relatively new comers, staying in this city less than a year
+```
+
+## 3. Exploratory Data Analysis
+```Assume I am a analyst of this store, I will use this sample data to answer some quesitons that boss may be very interested in```
+### 3.1 How many customers are included in this dataset?
+```{r}
+df_complete %>% distinct(User_ID) %>% summarize(count = n())
+# 5868 customers are included in this dataset
+```
+
+### 3.2 What are most popular products?
+```{r}
+top10_product <- df_complete %>% group_by(Product_ID) %>% summarise(count = n()) %>% arrange(desc(count)) %>% top_n(10)
+# To avoid ggplot from automatically sorting x-axis
+top10_product$Product_ID <- factor(top10_product$Product_ID, levels = top10_product$Product_ID)
+ggplot(top10_product, aes(Product_ID,count)) + geom_bar(stat = "identity") + 
+  theme(axis.text.x = element_text(angle = 60,hjust = 1)) + scale_y_continuous(expand = c(0, 0), limits = c(0, 1600))
+
+# P00110742 is most popular product
+```
+
+### 3.3 Which product category yields most revenue?
+```{r}
+# Assume Product_Category_1 means main category, and Product_Category_2 and Product_Category_3 are sub-category
+rev <- df_complete %>% group_by(Product_Category_1) %>% summarise(revenue = sum(Purchase)) 
+perc <- round(rev$revenue/sum(rev$revenue), 2)
+ggplot(rev, aes(x = 1, y = revenue, fill = Product_Category_1)) + geom_bar(stat = 'identity', width = 1) + 
+  geom_text(aes(label = perc), position = position_stack(vjust = 0.5), size = 3) +
+  coord_polar(theta = "y") + scale_y_continuous(labels = comma)
+# We can see Product_category_1 yielded most revenue. So manager of this store should focus most on category 1
+
+```
+
+### 3.4 Which age group spends more?
+```{r}
+# Then, which age group buys more?
+rev1 <- df_complete %>% group_by(Age) %>% summarise(revenue = sum(Purchase)) 
+perc1 <- round(rev1$revenue/sum(rev1$revenue), 2)
+ggplot(rev1, aes(x = 1,y = revenue, fill = Age)) + geom_bar(stat = 'identity', width = 1) + 
+  geom_text(aes(label = perc1), position = position_stack(vjust = 0.5), size = 3) +
+  coord_polar(theta = "y") + scale_y_continuous(labels = comma)
+# The manager of this store can targets more at customers of age 18-45, for example, sending ads more to these age groups.
+```
+### 3.5 What kind of occupation in what kind of city should be main focus?
+```{r}
+rev2 <- df_complete %>% group_by(Occupation, City_Category) %>% summarise(revenue = sum(Purchase))
+ggplot(rev2, aes(Occupation, City_Category)) + 
+  geom_tile(aes(fill = revenue),colour = "white") + scale_fill_gradient(low = "green",high = "red")
+# Very clearly, City category B yields more revenue than other two categories, Occupation 1,4,7,12,17 yield more than other occupations, so managers of this retail company should target more at city B, and Occupation 1,4,7,12,17.
+```
+
+
+
+### 3.6 Which category is most expensive?
+```{r}
+df_complete %>% ggplot(aes(Product_Category_1, Purchase)) + geom_boxplot()
+# Category 10 is most expensive, category 4,12,13 are least expensive
+# Then, we natually come to think, which age group like to buy most expensive, and least expensive?
+df_complete %>% filter(Product_Category_1 == 10) %>% ggplot(aes(Age)) + geom_bar()
+df_complete %>% filter(Product_Category_1 %in% c(4,12,13)) %>% ggplot(aes(Age)) + geom_bar()
+# From result, surprisingly, we can see there is almost no difference in distribution
+# So, is it possible that in reality, age in fact plays no important role in influencing purchase, i.e. age will not be directly related to purchase. Perhaps it is becuase actually other factors influence age to in turn indirectly influence purchase?
+# I will use statistical thinking to verify
+```
+
+```{r}
+# 1-way ANOVA of age
+anova_age <- lm(Purchase~Age, data = df_complete)
+summary(anova_age)
+# Then put other variables into consideration
+# I think variables like Gender, Occupation and Stay_In_City_Year might have some relationship with Age, so I put these four into consideration
+anova <- lm(Purchase~Age+Gender+Occupation+Stay_In_Current_City_Years, data = df_complete)
+summary(anova)
+# After putting those variables into consideration, almost all age group become statistically insignificant, so I think age is affected by other variables to indirectly have a impact on purchase.
+```
+
+## 4. Conclusion
+#### From analysis above, I can infer that this retail company targets mainly at young men who just come to city. Furthermore, to increase business performance, the managers of this retial company should focus most on Product_Catrgory_1-1, which yields significantly more revenue (65%), and take target marketing primarily on customers of City_Category B and Occupation 1,4,7,12,17, as well as customers of age 18-45, though age is not the main reason.
